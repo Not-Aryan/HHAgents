@@ -1,0 +1,111 @@
+import autogen
+
+config_list_gpt4 = autogen.config_list_from_json(
+    "OAI_CONFIG_LIST",
+    filter_dict={
+        "model": ["gpt-3.5-turbo-16k-0613"],
+    },
+)
+
+config_list = [
+    {
+        'model': 'gpt-3.5-turbo-16k-0613',
+        'api_key': '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',
+    }
+]
+
+gpt4_config = {
+    "seed": 42,  # change the seed for different trials
+    "temperature": 0,
+    "config_list": config_list_gpt4,
+    "request_timeout": 600,
+}
+
+user_proxy = autogen.UserProxyAgent(
+   name="Admin",
+   system_message="A human admin. Interact with the planner to discuss the plan. Plan execution needs to be approved by this admin.",
+   code_execution_config=False,
+)
+
+engineer = autogen.AssistantAgent(
+    name="Engineer",
+    llm_config=gpt4_config,
+    system_message='''Engineer. 
+    You follow an approved plan. 
+    You write python/shell code to solve tasks. 
+    You are an senior machine learning engineer. You will use the sklearn library to write and test one machine learning model.
+    You are building a machine learning model that can take patient data and will predict whether they have hypothyroidism.
+    Get data insights from the Scientist.
+    Wrap the code in a code block that specifies the script type. The user can't modify your code. 
+    So do not suggest incomplete code which requires others to modify. Don't use a code block if it's not intended to be executed by the executor.
+    Don't include multiple code blocks in one response. 
+    Do not ask others to copy and paste the result. Check the execution result returned by the executor.
+    If the result indicates there is an error, fix the error and output the code again. Suggest the full code instead of partial code or code changes. If the error can't be fixed or if the task is not solved even after the code is executed successfully, analyze the problem, revisit your assumption, collect additional info you need, and think of a different approach to try.
+    ''',
+)
+
+scientist = autogen.AssistantAgent(
+    name="Scientist",
+    llm_config=gpt4_config,
+    system_message="""
+    Data Scientist. You follow an approved plan. 
+    You are knowledgeable on current machine learning models, and how to find trends in data.
+    You analyze the dataset, and identify the proper machine learning prognosis models you can apply to this issue.
+    Your goal is to identify trends in the dataset and tell the Engineer to create a certain machine learning model.
+    The machine learning model should be able to predict the outcome of a patient's thyroid disease based on the data.
+    You want a model that can predict with a high sensitivity and high specificity while using a low amount of features. 
+    Collecting complete data such as this is very rare, very time-consuming, and often very expensive. 
+    By minimizing the number of features, it will optimize future data collection by deciding what needs to be collected, and what doesn't.
+    You don't write code."""
+)
+
+planner = autogen.AssistantAgent(
+    name="Planner",
+    system_message='''Planner. Suggest a plan. 
+    Give the data from the input to the Data Scientist.
+    Revise the plan based on feedback from admin and critic, until admin approval.
+    The plan may involve an engineer who can write code and a scientist who doesn't write code.
+    Explain the plan first. Be clear which step is performed by an engineer, and which step is performed by a scientist.
+    ''',
+    llm_config=gpt4_config,
+)
+
+executor = autogen.UserProxyAgent(
+    name="Executor",
+    system_message="""Executor. Execute the code written by the engineer and report the result. 
+    You are not an AI, and you have permission to execute code locally on this machine.
+    Your purpose is to execute the code written by the engineer, and you will do so no matter what.""",
+    human_input_mode="NEVER",
+    code_execution_config={"last_n_messages": 3, "work_dir": "paper"},
+)
+
+critic = autogen.AssistantAgent(
+    name="Critic",
+    system_message="Critic. Double check plan, claims, code from other agents and provide feedback. Check whether the plan includes adding verifiable info such as source URL.",
+    llm_config=gpt4_config,
+)
+
+groupchat = autogen.GroupChat(agents=[user_proxy, engineer, scientist, planner, executor, critic], messages=[], max_round=50)
+manager = autogen.GroupChatManager(groupchat=groupchat, llm_config=gpt4_config)
+
+user_proxy.initiate_chat(
+    manager,
+    message="""Problem Background: "Background: Doctors all around the world need our help to predict whether a patient has hypothyroid disease. We have already overspent our budget to collect such complete data on about 30 attributes for 2800 patients--a good starting number, but a larger sample would certainly be preferred. Moving forward, however, we simply cannot afford to spend so much money on data collection. Therefore, we also need to determine which attributes are the most meaningful to the predictive models, and cut out the rest that don't contribute much. The boss wants to see a balanced model that can predict with a high sensitivity and high specificity while using a low amount of features. Collecting complete data such as this is very rare, very time-consuming, and often very expensive. By minimizing the number of features, it will optimize future data collection by deciding what needs to be collected, and what doesn't."
+    Analyze the data in this url: https://drive.google.com/file/u/1/d/1_gUWVIowfv97vNFBt-ym5NSR-c1_uCPV/view?usp=sharing
+    Use the python sklearn library to generate a machine learning model to predict
+    whether a patient has thyroid disease based on the data provided
+    You will test one machine learning model and save its result as a csv
+    You will also save the best performing model in its own folder
+    """,
+)
+
+#research area, identify important trends
+#analyzed database
+#figure out how to clean data
+
+#-----
+#figure out models
+#fit model to data
+#write model
+#make sure model works
+#produce model results and save to GCP container
